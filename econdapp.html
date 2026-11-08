@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EconoChain | Econometric Model Registry dApp</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Ethers.js v5 CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+</head>
+<body>
+
+    <header class="navbar">
+        <div class="nav-container">
+            <div class="logo">
+                <img src="https://img.icons8.com/color/48/analytics.png" alt="EconoChain Logo" />
+                <h1>EconoChain dApp</h1>
+            </div>
+            <button id="connectWalletBtn" class="btn btn-primary">Connect MetaMask Wallet</button>
+        </div>
+    </header>
+
+    <main class="container">
+        
+        <!-- Hero & Info Banner -->
+        <section class="hero-card">
+            <h2>Econometric Model Registry & Prediction Audit</h2>
+            <p>
+                An immutable Sepolia smart contract registry designed to time-stamp statistical forecasts, regression parameters, 
+                and econometric dataset hashes before market outcomes take place—preventing hindsight bias and establishing auditable analyst credibility.
+            </p>
+            <ul class="info-list">
+                <li><strong>Network:</strong> Sepolia Testnet</li>
+                <li><strong>Verified Smart Contract:</strong> <a id="contractLink" href="#" target="_blank">View on Sepolia Etherscan</a></li>
+                <li><strong>Status:</strong> <span id="walletAddress" class="badge">Wallet Disconnected</span></li>
+            </ul>
+        </section>
+
+        <!-- Form 1: Publish Forecast (Write Function) -->
+        <section class="card">
+            <h3>Publish Econometric Forecast (Write Function)</h3>
+            <p>Register a new statistical prediction and link your dataset reference hash onto the Sepolia blockchain ledger.</p>
+            <form id="publishForm">
+                <div class="form-group">
+                    <label for="modelName">Model Name / Technique:</label>
+                    <input type="text" id="modelName" placeholder="e.g., ARIMA(1,1,1) Inflation Model" required />
+                </div>
+                <div class="form-group">
+                    <label for="targetVariable">Target Variable:</label>
+                    <input type="text" id="targetVariable" placeholder="e.g., CPI Inflation Rate Q4" required />
+                </div>
+                <div class="form-group">
+                    <label for="predictedValue">Predicted Value (Scaled integer x100):</label>
+                    <input type="number" id="predictedValue" placeholder="e.g., 550 for 5.50%" required />
+                </div>
+                <div class="form-group">
+                    <label for="datasetHash">Dataset Reference Hash / IPFS URI:</label>
+                    <input type="text" id="datasetHash" placeholder="e.g., QmXoypizjW3WknFiJnKLwHCnL72vedxjQkDDP1mXWo6uco" required />
+                </div>
+                <button type="submit" class="btn btn-success" id="publishBtn">Publish Forecast to Chain</button>
+            </form>
+            <div id="publishStatus" class="status-box"></div>
+        </section>
+
+        <!-- Form 2: Resolve Outcome (Write Function) -->
+        <section class="card">
+            <h3>Resolve Actual Outcome (Write Function)</h3>
+            <p>Original analysts can log the true realized market outcome to compute forecast variance on-chain.</p>
+            <form id="resolveForm">
+                <div class="form-group">
+                    <label for="resolveId">Forecast ID:</label>
+                    <input type="number" id="resolveId" placeholder="e.g., 1" required />
+                </div>
+                <div class="form-group">
+                    <label for="actualValue">Actual Realized Value (Scaled integer x100):</label>
+                    <input type="number" id="actualValue" placeholder="e.g., 520 for 5.20%" required />
+                </div>
+                <button type="submit" class="btn btn-warning" id="resolveBtn">Resolve Outcome</button>
+            </form>
+            <div id="resolveStatus" class="status-box"></div>
+        </section>
+
+        <!-- Read Query Section (Read Functions) -->
+        <section class="card">
+            <h3>Query Model Registry (Read Functions)</h3>
+            <div class="read-actions">
+                <button id="getTotalBtn" class="btn btn-secondary">Get Total Forecast Count</button>
+            </div>
+            <div id="totalCountDisplay" class="query-result"></div>
+
+            <hr class="divider" />
+
+            <h4>Lookup Specific Forecast ID</h4>
+            <div class="search-box">
+                <input type="number" id="searchId" placeholder="Enter Forecast ID (e.g., 1)" />
+                <button id="queryForecastBtn" class="btn btn-info">Fetch Forecast Details</button>
+            </div>
+            <div id="forecastDetailsDisplay" class="query-result"></div>
+        </section>
+
+    </main>
+
+    <footer>
+        <p>MG3012 - Blockchain Technology for Business | Fall 2026 | Sepolia Testnet dApp</p>
+    </footer>
+
+    <!-- Web3 Integration Script -->
+    <script>
+        // Contract Configuration Parameters (Replace with deployed contract address)
+        const CONTRACT_ADDRESS = "0xAb0461c36296Fe9A1B8320BDFF709bba9d8Bc93f"; 
+
+        const CONTRACT_ABI = [
+            "function publishForecast(string memory _modelName, string memory _targetVariable, int256 _predictedValue, string memory _datasetHash) external returns (uint256)",
+            "function resolveOutcome(uint256 _id, int256 _actualValue) external",
+            "function getForecastDetails(uint256 _id) external view returns (uint256 id, string memory modelName, string memory targetVariable, int256 predictedValue, int256 actualValue, string memory datasetHash, address analyst, uint256 timestamp, bool isResolved)",
+            "function getTotalForecasts() external view returns (uint256)",
+            "function getAnalystForecasts(address _analyst) external view returns (uint256[])"
+        ];
+
+        let provider;
+        let signer;
+        let contract;
+
+        const connectWalletBtn = document.getElementById("connectWalletBtn");
+        const walletAddressSpan = document.getElementById("walletAddress");
+        const contractLink = document.getElementById("contractLink");
+
+        // Set Etherscan URL
+        contractLink.href = `https://sepolia.etherscan.io/address/${CONTRACT_ADDRESS}`;
+        contractLink.innerText = CONTRACT_ADDRESS !== "0x0000000000000000000000000000000000000000" 
+            ? CONTRACT_ADDRESS 
+            : "Set Deployed Contract Address";
+
+        // Connect MetaMask
+        async function connectWallet() {
+            if (typeof window.ethereum !== 'undefined') {
+                try {
+                    provider = new ethers.providers.Web3Provider(window.ethereum);
+                    await provider.send("eth_requestAccounts", []);
+                    signer = provider.getSigner();
+                    const address = await signer.getAddress();
+                    
+                    walletAddressSpan.innerText = `Connected: ${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
+                    walletAddressSpan.className = "badge connected";
+
+                    contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+                } catch (error) {
+                    console.error("User rejected wallet connection", error);
+                    alert("Wallet connection rejected.");
+                }
+            } else {
+                alert("MetaMask is not installed. Please install MetaMask to interact with this dApp.");
+            }
+        }
+
+        connectWalletBtn.addEventListener("click", connectWallet);
+
+        // 1. Submit Publish Form (Write Function)
+        document.getElementById("publishForm").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const statusDiv = document.getElementById("publishStatus");
+            if (!contract) return alert("Please connect your MetaMask wallet first.");
+
+            const modelName = document.getElementById("modelName").value;
+            const targetVariable = document.getElementById("targetVariable").value;
+            const predictedValue = parseInt(document.getElementById("predictedValue").value);
+            const datasetHash = document.getElementById("datasetHash").value;
+
+            try {
+                statusDiv.innerHTML = "<p class='info-text'>Sending transaction to Sepolia... Please confirm in MetaMask.</p>";
+                const tx = await contract.publishForecast(modelName, targetVariable, predictedValue, datasetHash);
+                statusDiv.innerHTML = `<p class='info-text'>Transaction submitted. Hash: ${tx.hash}<br>Awaiting block confirmation...</p>`;
+                await tx.wait();
+                statusDiv.innerHTML = "<p class='success-text'>Forecast successfully registered on Sepolia!</p>";
+                document.getElementById("publishForm").reset();
+            } catch (err) {
+                console.error(err);
+                statusDiv.innerHTML = `<p class='error-text'>Error: ${err.message || err}</p>`;
+            }
+        });
+
+        // 2. Submit Resolve Form (Write Function)
+        document.getElementById("resolveForm").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const statusDiv = document.getElementById("resolveStatus");
+            if (!contract) return alert("Please connect your MetaMask wallet first.");
+
+            const resolveId = parseInt(document.getElementById("resolveId").value);
+            const actualValue = parseInt(document.getElementById("actualValue").value);
+
+            try {
+                statusDiv.innerHTML = "<p class='info-text'>Sending transaction to Sepolia... Please confirm in MetaMask.</p>";
+                const tx = await contract.resolveOutcome(resolveId, actualValue);
+                statusDiv.innerHTML = `<p class='info-text'>Transaction submitted. Hash: ${tx.hash}<br>Awaiting block confirmation...</p>`;
+                await tx.wait();
+                statusDiv.innerHTML = "<p class='success-text'>Actual outcome successfully recorded on-chain!</p>";
+                document.getElementById("resolveForm").reset();
+            } catch (err) {
+                console.error(err);
+                statusDiv.innerHTML = `<p class='error-text'>Error: ${err.message || err}</p>`;
+            }
+        });
+
+        // 3. Read Function: Get Total Forecasts
+        document.getElementById("getTotalBtn").addEventListener("click", async () => {
+            const display = document.getElementById("totalCountDisplay");
+            try {
+                const readProvider = provider || new ethers.providers.JsonRpcProvider("https://rpc.sepolia.org");
+                const readContract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, readProvider);
+                const count = await readContract.getTotalForecasts();
+                display.innerHTML = `<p class='result-box'><strong>Total Models Registered on Chain:</strong> ${count.toString()}</p>`;
+            } catch (err) {
+                console.error(err);
+                display.innerHTML = `<p class='error-text'>Error querying total count. Check contract address.</p>`;
+            }
+        });
+
+        // 4. Read Function: Fetch Specific Forecast Details
+        document.getElementById("queryForecastBtn").addEventListener("click", async () => {
+            const display = document.getElementById("forecastDetailsDisplay");
+            const searchId = document.getElementById("searchId").value;
+            if (!searchId) return alert("Please enter a valid Forecast ID.");
+
+            try {
+                const readProvider = provider || new ethers.providers.JsonRpcProvider("https://rpc.sepolia.org");
+                const readContract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, readProvider);
+                const data = await readContract.getForecastDetails(searchId);
+
+                const dateString = new Date(data.timestamp.toNumber() * 1000).toLocaleString();
+
+                display.innerHTML = `
+                    <div class='result-card'>
+                        <h5>Forecast ID #${data.id.toString()}</h5>
+                        <p><strong>Model Name:</strong> ${data.modelName}</p>
+                        <p><strong>Target Variable:</strong> ${data.targetVariable}</p>
+                        <p><strong>Predicted Value:</strong> ${data.predictedValue.toString() / 100}</p>
+                        <p><strong>Actual Value:</strong> ${data.isResolved ? data.actualValue.toString() / 100 : '<em>Pending Outcome</em>'}</p>
+                        <p><strong>Dataset Hash/URI:</strong> <code>${data.datasetHash}</code></p>
+                        <p><strong>Analyst Address:</strong> <code>${data.analyst}</code></p>
+                        <p><strong>Timestamp:</strong> ${dateString}</p>
+                        <p><strong>Status:</strong> ${data.isResolved ? '<span class="status-resolved">Resolved</span>' : '<span class="status-pending">Active / Pending</span>'}</p>
+                    </div>
+                `;
+            } catch (err) {
+                console.error(err);
+                display.innerHTML = `<p class='error-text'>Failed to fetch details for Forecast ID #${searchId}. Make sure ID exists.</p>`;
+            }
+        });
+    </script>
+</body>
+</html>
